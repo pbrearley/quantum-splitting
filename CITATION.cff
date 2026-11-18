@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software or its coefficients, please cite the work below."
+title: Splitting Coefficients for Contractive Dynamics
+type: software
+license: MIT
+version: 0.1.0
+authors:
+  - family-names: Brearley
+    given-names: Peter
+preferred-citation:
+  type: article
+  title: High-order splitting of non-unitary operators on quantum computers
+  authors:
+    - family-names: Brearley
+      given-names: Peter
+    - family-names: Pfeffer
+      given-names: Philipp
+  year: 2026
+  url: https://arxiv.org/abs/2511.19659
+  identifiers:
+    - type: other
+      value: "arXiv:2511.19659"
+      description: arXiv preprint

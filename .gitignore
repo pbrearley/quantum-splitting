@@ -1,0 +1,22 @@
+# Python environments, build files, and caches
+/build/
+/dist/
+/.venv/
+*.egg-info/
+*.so
+*.pyd
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Local editor and macOS files
+/.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# Generated example output
+/examples/order*_m*.json
+/examples/coefficient_profiles.png
+/examples/convergence.png

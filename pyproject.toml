@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77.0.3", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantum-splitting"
+version = "0.1.0"
+description = "Coefficient search, optimisation, and verification for dissipative splitting"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Peter Brearley" }]
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "mpmath>=1.3", "scipy>=1.11", "matplotlib>=3.8"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Paper = "https://arxiv.org/abs/2511.19659"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.11"]
+
+[project.scripts]
+quantum-splitting = "quantum_splitting._cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
