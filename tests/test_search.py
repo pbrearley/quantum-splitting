@@ -153,3 +153,25 @@ def test_search_rejects_an_undersized_m_before_attempting_a_solve(monkeypatch):
     assert "7 free complex coefficients" in message
     assert "8 complex order conditions" in message
     assert "m >= 16" in message
+
+
+@pytest.mark.parametrize("perturbation", [0.0, 1e-3])
+def test_screen_skips_only_clear_failures_and_bounds_the_verified_residual(perturbation):
+    search_module = import_module("quantum_splitting.search")
+    archived = load_formula(COEFFICIENTS / "order6_m16.json")
+    b = np.array([complex(float(Fraction(re)), float(Fraction(im))) for re, im in archived.b])
+    # Keep the palindrome and consistency while breaking the order conditions.
+    b[1] += perturbation
+    b[-2] += perturbation
+    b[2] -= perturbation
+    b[-3] -= perturbation
+    options = search_module._SearchOptions(6, 16, 0, None, Fraction(0), 1600, 1e-12)
+
+    estimate = search_module._clear_failure(options, b)
+    if perturbation == 0:
+        assert estimate is None
+        return
+    assert estimate is not None
+    formula = search_module._formula(options, b)
+    verified = verify(formula, dps=40, tolerance="1e-12").max_residual
+    assert estimate <= float(verified) * (1 + 1e-9)

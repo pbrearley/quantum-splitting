@@ -12,9 +12,11 @@ from math import ceil, isfinite, log10
 
 import numpy as np
 from numpy.typing import NDArray
+from threadpoolctl import threadpool_limits
 
 from ._bounds import above_real_floor, real_floor
 from ._centered_search import SearchConditions
+from ._kernel import OrderConditions
 from ._words import count_order_conditions
 from .model import Formula
 from .precision import RefinementError, _refine, verify
@@ -22,6 +24,9 @@ from .report import ProgressReporter
 
 _DEFAULT_MAX_NFEV = 1600
 _SCREEN_TOLERANCE = 1e-12
+# Skip arbitrary-precision verification when a double-precision Lyndon word
+# error already exceeds the acceptance threshold by this factor.
+_SKIP_MARGIN = 10.0
 
 
 @dataclass(frozen=True)
@@ -29,7 +34,9 @@ class SearchResult:
     """Best candidate found within the search budget.
 
     ``residual`` is the maximum absolute word error through the requested
-    order, evaluated with at least 40 working digits. ``attempts`` counts the
+    order, evaluated with at least 40 working digits. For a candidate that
+    clearly fails, it is instead the largest Lyndon word error evaluated in
+    double precision, a lower bound on that maximum. ``attempts`` counts the
     starting points considered, and ``converged`` records whether the error
     meets the requested tolerance.
     """
@@ -58,6 +65,23 @@ class _SearchOptions:
 @lru_cache(maxsize=4)
 def _conditions(order: int, m: int) -> SearchConditions:
     return SearchConditions(order, m)
+
+
+@lru_cache(maxsize=4)
+def _lyndon_conditions(order: int, m: int) -> OrderConditions:
+    return OrderConditions(order, m)
+
+
+def _clear_failure(options: _SearchOptions, full: NDArray[np.complex128]) -> float | None:
+    """Return a cheap residual bound if the candidate cannot meet either threshold.
+
+    The Lyndon words are a subset of the words that ``verify`` checks, so their
+    largest error bounds the verified maximum from below, up to rounding.
+    """
+    conditions = _lyndon_conditions(options.order, options.m)
+    estimate = float(np.max(np.abs(conditions.residual(conditions.encode(full)))))
+    threshold = _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE)
+    return estimate if estimate > threshold else None
 
 
 def _start(
@@ -125,9 +149,16 @@ def _attempt(options: _SearchOptions, index: int) -> SearchResult:
         conditions = _conditions(options.order, options.m)
         start = _start(conditions, options, index)
         if start is not None:
-            free, _, _ = conditions.solve(start, options.max_nfev, float(options.min_real))
-            formula = _formula(options, conditions.decode(free))
+            # The solver's matrices are small. Multithreaded BLAS spends most of
+            # its time synchronising on them and made order-10 starts 20-45x slower.
+            with threadpool_limits(limits=1, user_api="blas"):
+                free, _, _ = conditions.solve(start, options.max_nfev, float(options.min_real))
+                full = conditions.decode(free)
+                failure = _clear_failure(options, full)
+            formula = _formula(options, full)
             if above_real_floor(formula, options.min_real):
+                if failure is not None:
+                    return SearchResult(formula, failure, index + 1, False)
                 return _verified_result(formula, options, index + 1)
 
     uniform = (f"1/{options.m + 1}", "0")
