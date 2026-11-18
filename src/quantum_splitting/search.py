@@ -18,7 +18,7 @@ from ._centered_search import SearchConditions
 from ._kernel import OrderConditions
 from ._words import count_order_conditions
 from .model import Formula
-from .precision import RefinementError, _refine, verify
+from .precision import RefinementError, _exact_components, _refine, verify
 from .report import ProgressReporter
 
 _DEFAULT_MAX_NFEV = 1600
@@ -26,6 +26,8 @@ _SCREEN_TOLERANCE = 1e-12
 # Skip arbitrary-precision verification when a double-precision Lyndon word
 # error already exceeds the acceptance threshold by this factor.
 _SKIP_MARGIN = 10.0
+# Largest consistency error for which the double-precision screen still applies.
+_CONSISTENCY_LIMIT = Fraction(1, 10**14)
 
 
 @dataclass(frozen=True)
@@ -85,7 +87,11 @@ def _lyndon_residual(formula: Formula) -> float:
     The Lyndon words are a subset of the words that ``verify`` checks, so this
     bounds its maximum from below, up to rounding. The solver's own score cannot
     serve here, as it measures normalised centered conditions in another basis.
+    The evaluator projects onto consistent coefficients, which keeps the bound
+    only while the stored consistency error is at rounding level.
     """
+    if _exact_components(formula)[1] > _CONSISTENCY_LIMIT**2:
+        return float("nan")
     try:
         b = _complex_coefficients(formula)
     except OverflowError:
@@ -93,7 +99,9 @@ def _lyndon_residual(formula: Formula) -> float:
     conditions = _lyndon_conditions(formula.order, formula.m)
     with np.errstate(all="ignore"):
         residual = conditions.residual(conditions.encode(b))
-    return float(np.max(np.abs(residual), initial=0.0))
+    estimate = float(np.max(np.abs(residual), initial=0.0))
+    # Leave overflowing evaluations to the arbitrary-precision check.
+    return estimate if isfinite(estimate) else float("nan")
 
 
 def _start(
@@ -200,7 +208,9 @@ def search(
     centered order conditions in double precision. For tolerances below
     ``1e-12``, a promising candidate is refined at arbitrary precision.
     Verification uses all words through ``order``, with higher working
-    precision for tighter tolerances. The optional
+    precision for tighter tolerances. A candidate whose double-precision
+    Lyndon word error already rules it out skips verification and reports
+    that error, a lower bound, as its residual. The optional
     ``on_improvement`` callback runs in the calling process for each improved
     candidate, including an admissible initial formula. The optional
     ``on_progress`` callback runs in the calling process after each

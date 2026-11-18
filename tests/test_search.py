@@ -155,7 +155,6 @@ def test_search_rejects_an_undersized_m_before_attempting_a_solve(monkeypatch):
     assert "m >= 16" in message
 
 
-
 def test_screen_passes_an_archived_root():
     search_module = import_module("quantum_splitting.search")
     assert search_module._lyndon_residual(load_formula(COEFFICIENTS / "order6_m16.json")) < 1e-14
@@ -174,3 +173,12 @@ def test_screen_bounds_the_verified_residual_from_below():
     estimate = search_module._lyndon_residual(formula)
     verified = verify(formula, dps=40, tolerance="1e-12").max_residual
     assert 1e-10 < estimate <= float(verified) * (1 + 1e-9)
+
+
+def test_screen_defers_an_inconsistent_formula_to_verification():
+    search_module = import_module("quantum_splitting.search")
+    archived = load_formula(COEFFICIENTS / "order6_m16.json")
+    real, imag = archived.b_half[0]
+    shifted = (str(Fraction(real) + Fraction(1, 10**6)), imag)
+    formula = Formula(archived.order, archived.m, (shifted, *archived.b_half[1:]))
+    assert np.isnan(search_module._lyndon_residual(formula))

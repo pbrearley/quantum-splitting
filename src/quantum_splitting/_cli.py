@@ -116,7 +116,9 @@ def _search(args: argparse.Namespace) -> int:
     print(
         f"Search {'converged' if result.converged else 'exhausted'} after {result.attempts} starts"
     )
-    print(f"Maximum residual through order {args.order} = {result.residual:.6e}")
+    # Converged results are always verified. Others may carry the screen's lower bound.
+    label = "Maximum residual" if result.converged else "Best residual (at least)"
+    print(f"{label} through order {args.order} = {result.residual:.6e}")
     print(f"Saved {args.output}")
     return 0 if result.converged else 1
 
