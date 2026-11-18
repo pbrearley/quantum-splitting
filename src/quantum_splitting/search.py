@@ -12,7 +12,6 @@ from math import ceil, isfinite, log10
 
 import numpy as np
 from numpy.typing import NDArray
-from threadpoolctl import threadpool_limits
 
 from ._bounds import above_real_floor, real_floor
 from ._centered_search import SearchConditions
@@ -72,16 +71,29 @@ def _lyndon_conditions(order: int, m: int) -> OrderConditions:
     return OrderConditions(order, m)
 
 
-def _clear_failure(options: _SearchOptions, full: NDArray[np.complex128]) -> float | None:
-    """Return a cheap residual bound if the candidate cannot meet either threshold.
+def _complex_coefficients(formula: Formula) -> NDArray[np.complex128]:
+    """Convert all B coefficients to complex128, raising OverflowError if out of range."""
+    return np.array(
+        [complex(float(Fraction(real)), float(Fraction(imag))) for real, imag in formula.b],
+        dtype=np.complex128,
+    )
 
-    The Lyndon words are a subset of the words that ``verify`` checks, so their
-    largest error bounds the verified maximum from below, up to rounding.
+
+def _lyndon_residual(formula: Formula) -> float:
+    """Return the largest Lyndon word error in double precision, or NaN if unavailable.
+
+    The Lyndon words are a subset of the words that ``verify`` checks, so this
+    bounds its maximum from below, up to rounding. The solver's own score cannot
+    serve here, as it measures normalised centered conditions in another basis.
     """
-    conditions = _lyndon_conditions(options.order, options.m)
-    estimate = float(np.max(np.abs(conditions.residual(conditions.encode(full)))))
-    threshold = _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE)
-    return estimate if estimate > threshold else None
+    try:
+        b = _complex_coefficients(formula)
+    except OverflowError:
+        return float("nan")
+    conditions = _lyndon_conditions(formula.order, formula.m)
+    with np.errstate(all="ignore"):
+        residual = conditions.residual(conditions.encode(b))
+    return float(np.max(np.abs(residual), initial=0.0))
 
 
 def _start(
@@ -91,13 +103,7 @@ def _start(
     if options.initial is not None and index % 2 == 0:
         # Finite decimal strings can still be outside the complex128 range.
         try:
-            coefficients = np.array(
-                [
-                    complex(float(Fraction(real)), float(Fraction(imag)))
-                    for real, imag in options.initial.b
-                ],
-                dtype=np.complex128,
-            )
+            coefficients = _complex_coefficients(options.initial)
         except OverflowError:
             pass
         else:
@@ -122,6 +128,11 @@ def _formula(options: _SearchOptions, full: NDArray[np.complex128]) -> Formula:
 
 
 def _verified_result(formula: Formula, options: _SearchOptions, attempts: int) -> SearchResult:
+    estimate = _lyndon_residual(formula)
+    if estimate > _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE):
+        # Neither acceptance nor refinement is possible, so skip the costly check.
+        return SearchResult(formula, estimate, attempts, False)
+
     dps = options.verification_dps
     tolerance = str(options.tolerance)
     check = verify(formula, dps=dps, tolerance=tolerance)
@@ -149,16 +160,9 @@ def _attempt(options: _SearchOptions, index: int) -> SearchResult:
         conditions = _conditions(options.order, options.m)
         start = _start(conditions, options, index)
         if start is not None:
-            # The solver's matrices are small. Multithreaded BLAS spends most of
-            # its time synchronising on them and made order-10 starts 20-45x slower.
-            with threadpool_limits(limits=1, user_api="blas"):
-                free, _, _ = conditions.solve(start, options.max_nfev, float(options.min_real))
-                full = conditions.decode(free)
-                failure = _clear_failure(options, full)
-            formula = _formula(options, full)
+            free, _, _ = conditions.solve(start, options.max_nfev, float(options.min_real))
+            formula = _formula(options, conditions.decode(free))
             if above_real_floor(formula, options.min_real):
-                if failure is not None:
-                    return SearchResult(formula, failure, index + 1, False)
                 return _verified_result(formula, options, index + 1)
 
     uniform = (f"1/{options.m + 1}", "0")

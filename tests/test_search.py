@@ -23,7 +23,7 @@ def test_order_condition_count_matches_the_solver_words():
 def test_centered_conditions_match_example_root_and_directional_derivative():
     formula = load_formula(COEFFICIENTS / "order8_m52.json")
     kernel = CenteredConditions(formula.order, formula.m)
-    coefficients = np.array([complex(float(Fraction(a)), float(Fraction(b))) for a, b in formula.b])
+    coefficients = import_module("quantum_splitting.search")._complex_coefficients(formula)
     offsets = formula.m * np.cumsum(coefficients[:-1]) - np.arange(formula.m) - 0.5
     residual, jacobian = kernel.evaluate(offsets, derivatives=True)
     assert len(residual) == count_order_conditions(8)
@@ -155,23 +155,22 @@ def test_search_rejects_an_undersized_m_before_attempting_a_solve(monkeypatch):
     assert "m >= 16" in message
 
 
-@pytest.mark.parametrize("perturbation", [0.0, 1e-3])
-def test_screen_skips_only_clear_failures_and_bounds_the_verified_residual(perturbation):
+
+def test_screen_passes_an_archived_root():
+    search_module = import_module("quantum_splitting.search")
+    assert search_module._lyndon_residual(load_formula(COEFFICIENTS / "order6_m16.json")) < 1e-14
+
+
+def test_screen_bounds_the_verified_residual_from_below():
     search_module = import_module("quantum_splitting.search")
     archived = load_formula(COEFFICIENTS / "order6_m16.json")
-    b = np.array([complex(float(Fraction(re)), float(Fraction(im))) for re, im in archived.b])
+    b = search_module._complex_coefficients(archived)
     # Keep the palindrome and consistency while breaking the order conditions.
-    b[1] += perturbation
-    b[-2] += perturbation
-    b[2] -= perturbation
-    b[-3] -= perturbation
+    b[[1, -2]] += 1e-3
+    b[[2, -3]] -= 1e-3
     options = search_module._SearchOptions(6, 16, 0, None, Fraction(0), 1600, 1e-12)
-
-    estimate = search_module._clear_failure(options, b)
-    if perturbation == 0:
-        assert estimate is None
-        return
-    assert estimate is not None
     formula = search_module._formula(options, b)
+
+    estimate = search_module._lyndon_residual(formula)
     verified = verify(formula, dps=40, tolerance="1e-12").max_residual
-    assert estimate <= float(verified) * (1 + 1e-9)
+    assert 1e-10 < estimate <= float(verified) * (1 + 1e-9)
