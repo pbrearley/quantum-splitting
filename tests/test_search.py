@@ -174,6 +174,9 @@ def test_screen_bounds_the_verified_residual_from_below():
     verified = verify(formula, dps=40, tolerance="1e-12").max_residual
     assert 1e-10 < estimate <= float(verified) * (1 + 1e-9)
 
+    skipped = search_module._verified_result(formula, options, 1)
+    assert not skipped.verified and skipped.residual == estimate
+
 
 def test_screen_defers_an_inconsistent_formula_to_verification():
     search_module = import_module("quantum_splitting.search")

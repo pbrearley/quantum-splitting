@@ -26,8 +26,9 @@ _SCREEN_TOLERANCE = 1e-12
 # Skip arbitrary-precision verification when a double-precision Lyndon word
 # error already exceeds the acceptance threshold by this factor.
 _SKIP_MARGIN = 10.0
-# Largest consistency error for which the double-precision screen still applies.
-_CONSISTENCY_LIMIT = Fraction(1, 10**14)
+# Largest squared consistency error (1e-14 squared) for which the
+# double-precision screen still applies.
+_CONSISTENCY_SQUARED_LIMIT = Fraction(1, 10**28)
 
 
 @dataclass(frozen=True)
@@ -35,17 +36,18 @@ class SearchResult:
     """Best candidate found within the search budget.
 
     ``residual`` is the maximum absolute word error through the requested
-    order, evaluated with at least 40 working digits. For a candidate that
-    clearly fails, it is instead the largest Lyndon word error evaluated in
-    double precision, a lower bound on that maximum. ``attempts`` counts the
-    starting points considered, and ``converged`` records whether the error
-    meets the requested tolerance.
+    order, evaluated with at least 40 working digits. If ``verified`` is
+    false, the candidate clearly failed and ``residual`` is instead the
+    largest Lyndon word error evaluated in double precision, a lower bound on
+    that maximum. ``attempts`` counts the starting points considered, and
+    ``converged`` records whether the error meets the requested tolerance.
     """
 
     formula: Formula
     residual: float
     attempts: int
     converged: bool
+    verified: bool = True
 
 
 @dataclass(frozen=True)
@@ -90,7 +92,7 @@ def _lyndon_residual(formula: Formula) -> float:
     The evaluator projects onto consistent coefficients, which keeps the bound
     only while the stored consistency error is at rounding level.
     """
-    if _exact_components(formula)[1] > _CONSISTENCY_LIMIT**2:
+    if _exact_components(formula)[1] > _CONSISTENCY_SQUARED_LIMIT:
         return float("nan")
     try:
         b = _complex_coefficients(formula)
@@ -139,7 +141,7 @@ def _verified_result(formula: Formula, options: _SearchOptions, attempts: int) -
     estimate = _lyndon_residual(formula)
     if estimate > _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE):
         # Neither acceptance nor refinement is possible, so skip the costly check.
-        return SearchResult(formula, estimate, attempts, False)
+        return SearchResult(formula, estimate, attempts, False, verified=False)
 
     dps = options.verification_dps
     tolerance = str(options.tolerance)
@@ -208,9 +210,8 @@ def search(
     centered order conditions in double precision. For tolerances below
     ``1e-12``, a promising candidate is refined at arbitrary precision.
     Verification uses all words through ``order``, with higher working
-    precision for tighter tolerances. A candidate whose double-precision
-    Lyndon word error already rules it out skips verification and reports
-    that error, a lower bound, as its residual. The optional
+    precision for tighter tolerances. A candidate that a double-precision
+    check already rules out skips verification (see ``SearchResult``). The optional
     ``on_improvement`` callback runs in the calling process for each improved
     candidate, including an admissible initial formula. The optional
     ``on_progress`` callback runs in the calling process after each
@@ -303,4 +304,4 @@ def search(
                     return result
 
     assert best is not None
-    return SearchResult(best.formula, best.residual, attempts, best.converged)
+    return SearchResult(best.formula, best.residual, attempts, best.converged, best.verified)
