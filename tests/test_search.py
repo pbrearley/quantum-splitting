@@ -157,10 +157,10 @@ def test_search_rejects_an_undersized_m_before_attempting_a_solve(monkeypatch):
 
 def test_screen_passes_an_archived_root():
     search_module = import_module("quantum_splitting.search")
-    assert search_module._lyndon_residual(load_formula(COEFFICIENTS / "order6_m16.json")) < 1e-14
+    assert search_module._estimated_residual(load_formula(COEFFICIENTS / "order6_m16.json")) < 1e-14
 
 
-def test_screen_bounds_the_verified_residual_from_below():
+def test_screen_estimates_the_verified_residual():
     search_module = import_module("quantum_splitting.search")
     archived = load_formula(COEFFICIENTS / "order6_m16.json")
     b = search_module._complex_coefficients(archived)
@@ -170,9 +170,10 @@ def test_screen_bounds_the_verified_residual_from_below():
     options = search_module._SearchOptions(6, 16, 0, None, Fraction(0), 1600, 1e-12)
     formula = search_module._formula(options, b)
 
-    estimate = search_module._lyndon_residual(formula)
+    estimate = search_module._estimated_residual(formula)
     verified = verify(formula, dps=40, tolerance="1e-12").max_residual
-    assert 1e-10 < estimate <= float(verified) * (1 + 1e-9)
+    assert estimate > 1e-10
+    assert estimate == pytest.approx(float(verified), rel=1e-9)
 
     skipped = search_module._verified_result(formula, options, 1)
     assert not skipped.verified and skipped.residual == estimate
@@ -184,4 +185,17 @@ def test_screen_defers_an_inconsistent_formula_to_verification():
     real, imag = archived.b_half[0]
     shifted = (str(Fraction(real) + Fraction(1, 10**6)), imag)
     formula = Formula(archived.order, archived.m, (shifted, *archived.b_half[1:]))
-    assert np.isnan(search_module._lyndon_residual(formula))
+    assert np.isnan(search_module._estimated_residual(formula))
+
+
+def test_screened_candidates_rank_by_their_maximum_word_error():
+    # Every start fails the screen. A Lyndon word estimate ranked the fourth
+    # start best, although its maximum word error exceeds that of the first.
+    search_module = import_module("quantum_splitting.search")
+    result = search(6, 16, seed=22, attempts=4, max_nfev=4, verbose=False)
+    assert not result.verified
+    options = search_module._SearchOptions(6, 16, 22, None, Fraction(0), 4, 1e-12)
+    assert result.formula == search_module._attempt(options, 0).formula
+    verified = verify(result.formula, dps=40, tolerance="1e-12").max_residual
+    assert float(verified) == pytest.approx(4.14595e-5, rel=1e-5)
+    assert result.residual == pytest.approx(float(verified), rel=1e-9)

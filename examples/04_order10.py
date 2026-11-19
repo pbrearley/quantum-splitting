@@ -25,7 +25,7 @@ def main() -> None:
     if not found.converged:
         raise SystemExit(
             f"No verified order-{ORDER} formula. Starts tried {found.attempts}. "
-            f"Best full-word error {found.residual:.3e}."
+            f"{'Maximum' if found.verified else 'Estimated maximum'} word error {found.residual:.3e}."
         )
     print(f"Found a verified formula on start {found.attempts}.", flush=True)
 

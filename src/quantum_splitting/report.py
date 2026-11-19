@@ -85,7 +85,7 @@ class ProgressReporter:
             flush=True,
         )
 
-    def __call__(self, done: int, best_residual: float) -> None:
+    def __call__(self, done: int, best_residual: float, verified: bool = True) -> None:
         now = time.monotonic()
         if now - self.last < self.interval:
             return
@@ -97,8 +97,9 @@ class ProgressReporter:
         else:
             starts = f"{done} starts done"
             eta = ""
+        error = "best error" if verified else "best estimated error"
         print(
-            f"  {starts}, best error {best_residual:.2e}, {_duration(elapsed)} elapsed{eta}",
+            f"  {starts}, {error} {best_residual:.2e}, {_duration(elapsed)} elapsed{eta}",
             file=sys.stderr,
             flush=True,
         )

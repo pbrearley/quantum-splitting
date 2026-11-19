@@ -78,6 +78,16 @@ def _condition_plan(order: int) -> _ConditionPlan:
 
 
 @cache
+def _word_error_plan(order: int) -> _ConditionPlan:
+    words = (
+        "".join(letters)
+        for degree in range(2, order + 1)
+        for letters in product("AB", repeat=degree)
+    )
+    return _word_plan(tuple(words))
+
+
+@cache
 def _leading_error_plan(order: int) -> _ConditionPlan:
     degree = order + 1
     words = ("".join(letters) for letters in product("AB", repeat=degree))
@@ -206,6 +216,18 @@ class OrderConditions(_ProductEvaluator):
         if order < 2:
             raise ValueError("order must be at least 2")
         super().__init__(m, _condition_plan(order))
+
+
+class WordErrors(_ProductEvaluator):
+    """Every word error from degree 2 through ``order``, as checked by ``verify``.
+
+    Degree one is omitted, as the free coordinates enforce consistency.
+    """
+
+    def __init__(self, order: int, m: int) -> None:
+        if order < 2:
+            raise ValueError("order must be at least 2")
+        super().__init__(m, _word_error_plan(order))
 
 
 class LeadingError(_ProductEvaluator):

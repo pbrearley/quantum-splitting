@@ -15,7 +15,7 @@ from numpy.typing import NDArray
 
 from ._bounds import above_real_floor, real_floor
 from ._centered_search import SearchConditions
-from ._kernel import OrderConditions
+from ._kernel import WordErrors
 from ._words import count_order_conditions
 from .model import Formula
 from .precision import RefinementError, _exact_components, _refine, verify
@@ -23,8 +23,8 @@ from .report import ProgressReporter
 
 _DEFAULT_MAX_NFEV = 1600
 _SCREEN_TOLERANCE = 1e-12
-# Skip arbitrary-precision verification when a double-precision Lyndon word
-# error already exceeds the acceptance threshold by this factor.
+# Skip arbitrary-precision verification when the double-precision estimate of
+# the maximum word error already exceeds the acceptance threshold by this factor.
 _SKIP_MARGIN = 10.0
 # Largest squared consistency error (1e-14 squared) for which the
 # double-precision screen still applies.
@@ -37,10 +37,10 @@ class SearchResult:
 
     ``residual`` is the maximum absolute word error through the requested
     order, evaluated with at least 40 working digits. If ``verified`` is
-    false, the candidate clearly failed and ``residual`` is instead the
-    largest Lyndon word error evaluated in double precision, a lower bound on
-    that maximum. ``attempts`` counts the starting points considered, and
-    ``converged`` records whether the error meets the requested tolerance.
+    false, the candidate clearly failed and ``residual`` is instead a
+    double-precision estimate of that maximum. ``attempts`` counts the
+    starting points considered, and ``converged`` records whether the error
+    meets the requested tolerance.
     """
 
     formula: Formula
@@ -71,8 +71,8 @@ def _conditions(order: int, m: int) -> SearchConditions:
 
 
 @lru_cache(maxsize=4)
-def _lyndon_conditions(order: int, m: int) -> OrderConditions:
-    return OrderConditions(order, m)
+def _word_errors(order: int, m: int) -> WordErrors:
+    return WordErrors(order, m)
 
 
 def _complex_coefficients(formula: Formula) -> NDArray[np.complex128]:
@@ -83,25 +83,28 @@ def _complex_coefficients(formula: Formula) -> NDArray[np.complex128]:
     )
 
 
-def _lyndon_residual(formula: Formula) -> float:
-    """Return the largest Lyndon word error in double precision, or NaN if unavailable.
+def _estimated_residual(formula: Formula) -> float:
+    """Estimate the maximum word error in double precision, or return NaN.
 
-    The Lyndon words are a subset of the words that ``verify`` checks, so this
-    bounds its maximum from below, up to rounding. The solver's own score cannot
-    serve here, as it measures normalised centered conditions in another basis.
-    The evaluator projects onto consistent coefficients, which keeps the bound
-    only while the stored consistency error is at rounding level.
+    This evaluates every word through the target order, as ``verify`` does, so
+    estimates and verified residuals of different candidates can be ranked
+    together. The solver's own score cannot serve here, as it measures
+    normalised centered conditions in another basis. The evaluator projects
+    onto consistent coefficients, so the estimate applies only while the
+    stored consistency error is at rounding level.
     """
-    if _exact_components(formula)[1] > _CONSISTENCY_SQUARED_LIMIT:
+    consistency_squared = _exact_components(formula)[1]
+    if consistency_squared > _CONSISTENCY_SQUARED_LIMIT:
         return float("nan")
     try:
         b = _complex_coefficients(formula)
     except OverflowError:
         return float("nan")
-    conditions = _lyndon_conditions(formula.order, formula.m)
+    conditions = _word_errors(formula.order, formula.m)
     with np.errstate(all="ignore"):
         residual = conditions.residual(conditions.encode(b))
-    estimate = float(np.max(np.abs(residual), initial=0.0))
+    # The degree-one error is the consistency error, as in ``verify``.
+    estimate = max(float(np.max(np.abs(residual))), float(consistency_squared) ** 0.5)
     # Leave overflowing evaluations to the arbitrary-precision check.
     return estimate if isfinite(estimate) else float("nan")
 
@@ -138,7 +141,7 @@ def _formula(options: _SearchOptions, full: NDArray[np.complex128]) -> Formula:
 
 
 def _verified_result(formula: Formula, options: _SearchOptions, attempts: int) -> SearchResult:
-    estimate = _lyndon_residual(formula)
+    estimate = _estimated_residual(formula)
     if estimate > _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE):
         # Neither acceptance nor refinement is possible, so skip the costly check.
         return SearchResult(formula, estimate, attempts, False, verified=False)
@@ -283,7 +286,7 @@ def search(
             if candidate.converged:
                 return candidate
             if reporter is not None:
-                reporter(done, best.residual)
+                reporter(done, best.residual, best.verified)
             if on_progress is not None:
                 on_progress(done, best)
         return None
