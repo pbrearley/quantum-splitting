@@ -17,7 +17,14 @@ from quantum_splitting import (
     save_formula,
     verify,
 )
-from quantum_splitting._kernel import LeadingError, OrderConditions
+from quantum_splitting._kernel import (
+    LeadingError,
+    OrderConditions,
+    WordErrors,
+    _ProductEvaluator,
+    _word_plan,
+)
+from quantum_splitting._words import word_index
 from quantum_splitting.optimize import OptimizationResult
 
 COEFFICIENTS = Path(__file__).resolve().parents[1] / "coefficients"
@@ -45,6 +52,39 @@ def test_leading_error_gradient_matches_real_directional_derivative(m):
         assert np.vdot(gradient, delta).real == pytest.approx(
             finite_difference, rel=1e-6, abs=1e-14
         )
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [
+        WordErrors(4, 6),
+        WordErrors(4, 7),
+        # A trailing word without B must not truncate the previous word's terms.
+        _ProductEvaluator(6, _word_plan(("AB", "ABA", "AAA"))),
+    ],
+)
+def test_word_jacobian_matches_central_differences(evaluator):
+    rng = np.random.default_rng(17)
+    y = 0.1 * (rng.standard_normal(evaluator.n_free) + 1j * rng.standard_normal(evaluator.n_free))
+    step = 1e-6
+
+    _, jacobian = evaluator.residual_jacobian(y)
+
+    # The residual is holomorphic in the complex free coordinates.
+    for column, basis in enumerate(np.eye(evaluator.n_free)):
+        finite_difference = (
+            evaluator.residual(y + step * basis) - evaluator.residual(y - step * basis)
+        ) / (2 * step)
+        np.testing.assert_allclose(jacobian[:, column], finite_difference, rtol=0, atol=1e-8)
+
+
+def test_words_without_b_have_zero_derivatives():
+    evaluator = WordErrors(4, 6)
+    _, jacobian = evaluator.residual_jacobian(np.full(evaluator.n_free, 0.05 + 0.02j))
+    constant = [word_index("A" * degree) for degree in range(2, 5)]
+    rows = np.isin(evaluator._plan.indices, constant)
+    assert np.count_nonzero(rows) == 3
+    assert not np.any(jacobian[rows])
 
 
 def test_leading_error_norm_matches_strang_coefficients():

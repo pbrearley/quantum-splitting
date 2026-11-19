@@ -34,6 +34,8 @@ class _ConditionPlan:
     derivative_starts: NDArray[np.intp]
     left_indices: NDArray[np.intp]
     right_indices: NDArray[np.intp]
+    # Words without B, such as AAA, do not depend on any B coefficient.
+    constant: NDArray[np.bool_]
 
 
 def _make_append_plan(degree: int, letter: str) -> _AppendPlan:
@@ -60,6 +62,13 @@ def _word_plan(words: tuple[str, ...]) -> _ConditionPlan:
         for prefix, reversed_suffix in derivative_splits(word):
             left.append(prefix)
             right.append(reversed_suffix)
+    # Index 0 is outside the word series and stays zero. This final split
+    # keeps every reduceat start in range without adding to any word.
+    left.append(0)
+    right.append(0)
+    # reduceat returns one term, not zero, for the empty segment of a word
+    # without B, so the evaluator zeroes those rows.
+    constant = np.asarray(["B" not in word for word in words], dtype=bool)
     return _ConditionPlan(
         degree,
         _make_append_plan(degree, "A"),
@@ -69,6 +78,7 @@ def _word_plan(words: tuple[str, ...]) -> _ConditionPlan:
         np.asarray(starts, dtype=np.intp),
         np.asarray(left, dtype=np.intp),
         np.asarray(right, dtype=np.intp),
+        constant,
     )
 
 
@@ -190,6 +200,7 @@ class _ProductEvaluator:
         # before the mirrored factor. Each B in a word gives one split.
         terms = after[:, plan.left_indices] * before[::-1, plan.right_indices]
         by_position = np.add.reduceat(terms, plan.derivative_starts, axis=1).T
+        by_position[plan.constant] = 0
         count = self.weights.size
         by_independent = by_position[:, :count].copy()
         mirrored = by_position[:, count:][:, ::-1]
