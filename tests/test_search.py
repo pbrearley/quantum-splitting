@@ -199,3 +199,13 @@ def test_screened_candidates_rank_by_their_maximum_word_error():
     verified = verify(result.formula, dps=40, tolerance="1e-12").max_residual
     assert float(verified) == pytest.approx(4.14595e-5, rel=1e-5)
     assert result.residual == pytest.approx(float(verified), rel=1e-9)
+
+
+def test_search_verifies_a_supplied_initial_formula_in_full():
+    # Large cancelling coefficients inflate the double-precision estimate of
+    # this exact order-2 formula, so the screen alone would discard it.
+    initial = Formula(2, 2, (("1/4", "1000000"), ("1/2", "-2000000")))
+    assert verify(initial, dps=100, tolerance="1e-63").passed
+    result = search(2, 2, initial=initial, attempts=1, verbose=False)
+    assert result.formula == initial
+    assert result.converged and result.verified and result.attempts == 0

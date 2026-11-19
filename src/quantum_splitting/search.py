@@ -141,10 +141,13 @@ def _formula(options: _SearchOptions, full: NDArray[np.complex128]) -> Formula:
 
 
 def _verified_result(formula: Formula, options: _SearchOptions, attempts: int) -> SearchResult:
-    estimate = _estimated_residual(formula)
-    if estimate > _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE):
-        # Neither acceptance nor refinement is possible, so skip the costly check.
-        return SearchResult(formula, estimate, attempts, False, verified=False)
+    # Always verify a supplied initial formula (attempts=0). Cancellation
+    # between large coefficients can inflate the double-precision estimate.
+    if attempts:
+        estimate = _estimated_residual(formula)
+        if estimate > _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE):
+            # Neither acceptance nor refinement is possible, so skip the costly check.
+            return SearchResult(formula, estimate, attempts, False, verified=False)
 
     dps = options.verification_dps
     tolerance = str(options.tolerance)
