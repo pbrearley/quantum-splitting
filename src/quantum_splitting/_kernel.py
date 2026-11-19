@@ -34,8 +34,6 @@ class _ConditionPlan:
     derivative_starts: NDArray[np.intp]
     left_indices: NDArray[np.intp]
     right_indices: NDArray[np.intp]
-    # Words without B, such as AAA, do not depend on any B coefficient.
-    constant: NDArray[np.bool_]
 
 
 def _make_append_plan(degree: int, letter: str) -> _AppendPlan:
@@ -55,6 +53,8 @@ def _make_append_plan(degree: int, letter: str) -> _AppendPlan:
 
 
 def _word_plan(words: tuple[str, ...]) -> _ConditionPlan:
+    # Each word needs a B, so that every derivative segment is nonempty.
+    assert all("B" in word for word in words)
     degree = len(words[-1]) if words else 0
     starts, left, right = [], [], []
     for word in words:
@@ -62,13 +62,6 @@ def _word_plan(words: tuple[str, ...]) -> _ConditionPlan:
         for prefix, reversed_suffix in derivative_splits(word):
             left.append(prefix)
             right.append(reversed_suffix)
-    # Index 0 is outside the word series and stays zero. This final split
-    # keeps every reduceat start in range without adding to any word.
-    left.append(0)
-    right.append(0)
-    # reduceat returns one term, not zero, for the empty segment of a word
-    # without B, so the evaluator zeroes those rows.
-    constant = np.asarray(["B" not in word for word in words], dtype=bool)
     return _ConditionPlan(
         degree,
         _make_append_plan(degree, "A"),
@@ -78,7 +71,6 @@ def _word_plan(words: tuple[str, ...]) -> _ConditionPlan:
         np.asarray(starts, dtype=np.intp),
         np.asarray(left, dtype=np.intp),
         np.asarray(right, dtype=np.intp),
-        constant,
     )
 
 
@@ -87,22 +79,23 @@ def _condition_plan(order: int) -> _ConditionPlan:
     return _word_plan(lyndon_words(order))
 
 
+def _mixed_words(degrees: range) -> tuple[str, ...]:
+    """List the words containing both letters, degree by degree.
+
+    The pure words have zero residual identically in these coordinates.
+    """
+    words = ("".join(letters) for degree in degrees for letters in product("AB", repeat=degree))
+    return tuple(word for word in words if "A" in word and "B" in word)
+
+
 @cache
 def _word_error_plan(order: int) -> _ConditionPlan:
-    words = (
-        "".join(letters)
-        for degree in range(2, order + 1)
-        for letters in product("AB", repeat=degree)
-    )
-    return _word_plan(tuple(words))
+    return _word_plan(_mixed_words(range(2, order + 1)))
 
 
 @cache
 def _leading_error_plan(order: int) -> _ConditionPlan:
-    degree = order + 1
-    words = ("".join(letters) for letters in product("AB", repeat=degree))
-    # The two pure words have zero residual identically in these coordinates.
-    return _word_plan(tuple(word for word in words if "A" in word and "B" in word))
+    return _word_plan(_mixed_words(range(order + 1, order + 2)))
 
 
 def _exponential_powers(
@@ -200,7 +193,6 @@ class _ProductEvaluator:
         # before the mirrored factor. Each B in a word gives one split.
         terms = after[:, plan.left_indices] * before[::-1, plan.right_indices]
         by_position = np.add.reduceat(terms, plan.derivative_starts, axis=1).T
-        by_position[plan.constant] = 0
         count = self.weights.size
         by_independent = by_position[:, :count].copy()
         mirrored = by_position[:, count:][:, ::-1]
@@ -230,9 +222,11 @@ class OrderConditions(_ProductEvaluator):
 
 
 class WordErrors(_ProductEvaluator):
-    """Every word error from degree 2 through ``order``, as checked by ``verify``.
+    """Mixed word errors from degree 2 through ``order``.
 
-    Degree one is omitted, as the free coordinates enforce consistency.
+    Together with the consistency error, these cover every word that
+    ``verify`` checks. The free coordinates enforce consistency, and the pure
+    words then have zero residual identically.
     """
 
     def __init__(self, order: int, m: int) -> None:

@@ -116,8 +116,9 @@ def _search(args: argparse.Namespace) -> int:
     print(
         f"Search {'converged' if result.converged else 'exhausted'} after {result.attempts} starts"
     )
-    label = "Maximum word error" if result.verified else "Estimated maximum word error"
-    print(f"{label} through order {args.order} = {result.residual:.6e}")
+    print(
+        f"{result.residual_label.capitalize()} through order {args.order} = {result.residual:.6e}"
+    )
     print(f"Saved {args.output}")
     return 0 if result.converged else 1
 
