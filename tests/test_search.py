@@ -209,3 +209,15 @@ def test_search_verifies_a_supplied_initial_formula_in_full():
     result = search(2, 2, initial=initial, attempts=1, verbose=False)
     assert result.formula == initial
     assert result.converged and result.verified and result.attempts == 0
+
+
+def test_screen_verifies_a_search_candidate_with_large_cancelling_coefficients():
+    # The estimate of this exact formula exceeds the skip threshold only
+    # through rounding, so the screen must defer to full verification.
+    search_module = import_module("quantum_splitting.search")
+    formula = Formula(2, 2, (("1/4", "1000000"), ("1/2", "-2000000")))
+    options = search_module._SearchOptions(2, 2, 0, None, Fraction(0), 1600, 1e-12)
+    assert search_module._estimated_residual(formula) > 10 * options.tolerance
+
+    result = search_module._verified_result(formula, options, 1)
+    assert result.converged and result.verified

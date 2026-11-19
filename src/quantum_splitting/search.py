@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from functools import lru_cache
 from itertools import count, islice, repeat
-from math import ceil, isfinite, log10
+from math import ceil, factorial, inf, isfinite, log10
 
 import numpy as np
 from numpy.typing import NDArray
@@ -109,6 +109,22 @@ def _estimated_residual(formula: Formula) -> float:
     return estimate if isfinite(estimate) else float("nan")
 
 
+def _rounding_bound(formula: Formula) -> float:
+    """Bound the rounding error of ``_estimated_residual``.
+
+    Word coefficients of degree d are at most magnitude**d / d!, where the
+    magnitude is the absolute coefficient sum. Each passes through 2m + 1
+    appends of at most d terms. Large cancelling coefficients can therefore
+    inflate the estimate of an accurate formula.
+    """
+    try:
+        magnitude = float(_exact_components(formula)[2])
+        largest = max(magnitude**d / factorial(d) for d in range(2, formula.order + 1))
+    except OverflowError:
+        return inf
+    return float(np.finfo(np.float64).eps) * (2 * formula.m + 1) * formula.order * largest
+
+
 def _start(
     conditions: SearchConditions, options: _SearchOptions, index: int
 ) -> NDArray[np.complex128] | None:
@@ -145,7 +161,8 @@ def _verified_result(formula: Formula, options: _SearchOptions, attempts: int) -
     # between large coefficients can inflate the double-precision estimate.
     if attempts:
         estimate = _estimated_residual(formula)
-        if estimate > _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE):
+        bound = _rounding_bound(formula)
+        if estimate - bound > _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE):
             # Neither acceptance nor refinement is possible, so skip the costly check.
             return SearchResult(formula, estimate, attempts, False, verified=False)
 
