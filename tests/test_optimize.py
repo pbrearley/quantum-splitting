@@ -17,7 +17,7 @@ from quantum_splitting import (
     save_formula,
     verify,
 )
-from quantum_splitting._kernel import LeadingError, OrderConditions
+from quantum_splitting._kernel import LeadingError, OrderConditions, WordErrors
 from quantum_splitting.optimize import OptimizationResult
 
 COEFFICIENTS = Path(__file__).resolve().parents[1] / "coefficients"
@@ -45,6 +45,23 @@ def test_leading_error_gradient_matches_real_directional_derivative(m):
         assert np.vdot(gradient, delta).real == pytest.approx(
             finite_difference, rel=1e-6, abs=1e-14
         )
+
+
+@pytest.mark.parametrize("m", [6, 7])
+def test_word_error_jacobian_matches_central_differences(m):
+    evaluator = WordErrors(4, m)
+    rng = np.random.default_rng(17)
+    y = 0.1 * (rng.standard_normal(evaluator.n_free) + 1j * rng.standard_normal(evaluator.n_free))
+    step = 1e-6
+
+    _, jacobian = evaluator.residual_jacobian(y)
+
+    # The residual is holomorphic in the complex free coordinates.
+    for column, basis in enumerate(np.eye(evaluator.n_free)):
+        finite_difference = (
+            evaluator.residual(y + step * basis) - evaluator.residual(y - step * basis)
+        ) / (2 * step)
+        np.testing.assert_allclose(jacobian[:, column], finite_difference, rtol=0, atol=1e-8)
 
 
 def test_leading_error_norm_matches_strang_coefficients():

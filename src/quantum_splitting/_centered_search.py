@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.linalg import lstsq, svd
+from threadpoolctl import threadpool_limits
 
 from ._centered import CenteredConditions
 
@@ -151,13 +152,16 @@ class SearchConditions:
 
     def solve(self, x, max_nfev: int, min_real: float):
         """Fit successively larger subsets of conditions within one budget."""
-        used = 0
-        for rows in self._stages:
-            budget = min(400, max_nfev // 4, max_nfev - used - 1)
-            if budget > 0:
-                x, _, count = self._solve_rows(x, rows, budget, 170, min_real)
-                used += count
-        x, score, count = self._solve_rows(x, slice(None), max_nfev - used, 550, min_real)
+        # The SVDs here are on small matrices. Multithreaded BLAS spends most of
+        # its time synchronising on them and made order-10 solves 20-45x slower.
+        with threadpool_limits(limits=1, user_api="blas"):
+            used = 0
+            for rows in self._stages:
+                budget = min(400, max_nfev // 4, max_nfev - used - 1)
+                if budget > 0:
+                    x, _, count = self._solve_rows(x, rows, budget, 170, min_real)
+                    used += count
+            x, score, count = self._solve_rows(x, slice(None), max_nfev - used, 550, min_real)
         return x, score, used + count
 
     def _solve_rows(self, x, rows, budget, iteration_limit, min_real):

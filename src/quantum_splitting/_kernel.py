@@ -53,6 +53,8 @@ def _make_append_plan(degree: int, letter: str) -> _AppendPlan:
 
 
 def _word_plan(words: tuple[str, ...]) -> _ConditionPlan:
+    # Each word needs a B, so that every derivative segment is nonempty.
+    assert all("B" in word for word in words)
     degree = len(words[-1]) if words else 0
     starts, left, right = [], [], []
     for word in words:
@@ -77,12 +79,23 @@ def _condition_plan(order: int) -> _ConditionPlan:
     return _word_plan(lyndon_words(order))
 
 
+def _mixed_words(degrees: range) -> tuple[str, ...]:
+    """List the words containing both letters, degree by degree.
+
+    The pure words have zero residual identically in these coordinates.
+    """
+    words = ("".join(letters) for degree in degrees for letters in product("AB", repeat=degree))
+    return tuple(word for word in words if "A" in word and "B" in word)
+
+
+@cache
+def _word_error_plan(order: int) -> _ConditionPlan:
+    return _word_plan(_mixed_words(range(2, order + 1)))
+
+
 @cache
 def _leading_error_plan(order: int) -> _ConditionPlan:
-    degree = order + 1
-    words = ("".join(letters) for letters in product("AB", repeat=degree))
-    # The two pure words have zero residual identically in these coordinates.
-    return _word_plan(tuple(word for word in words if "A" in word and "B" in word))
+    return _word_plan(_mixed_words(range(order + 1, order + 2)))
 
 
 def _exponential_powers(
@@ -206,6 +219,20 @@ class OrderConditions(_ProductEvaluator):
         if order < 2:
             raise ValueError("order must be at least 2")
         super().__init__(m, _condition_plan(order))
+
+
+class WordErrors(_ProductEvaluator):
+    """Mixed word errors from degree 2 through ``order``.
+
+    Together with the consistency error, these cover every word that
+    ``verify`` checks. The free coordinates enforce consistency, and the pure
+    words then have zero residual identically.
+    """
+
+    def __init__(self, order: int, m: int) -> None:
+        if order < 2:
+            raise ValueError("order must be at least 2")
+        super().__init__(m, _word_error_plan(order))
 
 
 class LeadingError(_ProductEvaluator):

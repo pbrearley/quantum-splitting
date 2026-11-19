@@ -5,11 +5,15 @@ from __future__ import annotations
 import sys
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from mpmath import mp, nstr
 
 from .model import Formula
 from .precision import _word_diagnostics
+
+if TYPE_CHECKING:
+    from .search import SearchResult
 
 
 @dataclass(frozen=True)
@@ -85,7 +89,7 @@ class ProgressReporter:
             flush=True,
         )
 
-    def __call__(self, done: int, best_residual: float) -> None:
+    def __call__(self, done: int, best: SearchResult) -> None:
         now = time.monotonic()
         if now - self.last < self.interval:
             return
@@ -98,7 +102,8 @@ class ProgressReporter:
             starts = f"{done} starts done"
             eta = ""
         print(
-            f"  {starts}, best error {best_residual:.2e}, {_duration(elapsed)} elapsed{eta}",
+            f"  {starts}, best {best.residual_label} {best.residual:.2e}, "
+            f"{_duration(elapsed)} elapsed{eta}",
             file=sys.stderr,
             flush=True,
         )

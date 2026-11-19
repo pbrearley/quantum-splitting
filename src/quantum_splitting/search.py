@@ -8,20 +8,27 @@ from dataclasses import dataclass
 from fractions import Fraction
 from functools import lru_cache
 from itertools import count, islice, repeat
-from math import ceil, isfinite, log10
+from math import ceil, factorial, inf, isfinite, log10
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ._bounds import above_real_floor, real_floor
 from ._centered_search import SearchConditions
+from ._kernel import WordErrors
 from ._words import count_order_conditions
 from .model import Formula
-from .precision import RefinementError, _refine, verify
+from .precision import RefinementError, _exact_components, _refine, verify
 from .report import ProgressReporter
 
 _DEFAULT_MAX_NFEV = 1600
 _SCREEN_TOLERANCE = 1e-12
+# Skip arbitrary-precision verification when the double-precision estimate of
+# the maximum word error already exceeds the acceptance threshold by this factor.
+_SKIP_MARGIN = 10.0
+# Largest squared consistency error (1e-14 squared) for which the
+# double-precision screen still applies.
+_CONSISTENCY_SQUARED_LIMIT = Fraction(1, 10**28)
 
 
 @dataclass(frozen=True)
@@ -29,7 +36,9 @@ class SearchResult:
     """Best candidate found within the search budget.
 
     ``residual`` is the maximum absolute word error through the requested
-    order, evaluated with at least 40 working digits. ``attempts`` counts the
+    order, evaluated with at least 40 working digits. If ``verified`` is
+    false, the candidate clearly failed and ``residual`` is instead a
+    double-precision estimate of that maximum. ``attempts`` counts the
     starting points considered, and ``converged`` records whether the error
     meets the requested tolerance.
     """
@@ -38,6 +47,12 @@ class SearchResult:
     residual: float
     attempts: int
     converged: bool
+    verified: bool = True
+
+    @property
+    def residual_label(self) -> str:
+        """Describe ``residual``, distinguishing an unverified estimate."""
+        return "maximum word error" if self.verified else "estimated maximum word error"
 
 
 @dataclass(frozen=True)
@@ -60,6 +75,62 @@ def _conditions(order: int, m: int) -> SearchConditions:
     return SearchConditions(order, m)
 
 
+@lru_cache(maxsize=4)
+def _word_errors(order: int, m: int) -> WordErrors:
+    return WordErrors(order, m)
+
+
+def _complex_coefficients(formula: Formula) -> NDArray[np.complex128]:
+    """Convert all B coefficients to complex128, raising OverflowError if out of range."""
+    return np.array(
+        [complex(float(Fraction(real)), float(Fraction(imag))) for real, imag in formula.b],
+        dtype=np.complex128,
+    )
+
+
+def _estimated_residual(formula: Formula) -> tuple[float, float]:
+    """Estimate the maximum word error in double precision, with a rounding bound.
+
+    This covers every word through the target order, as ``verify`` does, so
+    estimates and verified residuals of different candidates can be ranked
+    together. The solver's own score cannot serve here, as it measures
+    normalised centered conditions in another basis. The evaluator projects
+    onto consistent coefficients, so the estimate applies only while the
+    stored consistency error is at rounding level. Otherwise the estimate is NaN.
+    """
+    _, consistency_squared, magnitude = _exact_components(formula)
+    bound = _rounding_bound(formula.order, formula.m, magnitude)
+    if consistency_squared > _CONSISTENCY_SQUARED_LIMIT:
+        return float("nan"), bound
+    try:
+        b = _complex_coefficients(formula)
+    except OverflowError:
+        return float("nan"), bound
+    conditions = _word_errors(formula.order, formula.m)
+    with np.errstate(all="ignore"):
+        residual = conditions.residual(conditions.encode(b))
+    # The degree-one error is the consistency error, as in ``verify``.
+    estimate = max(float(np.max(np.abs(residual))), float(consistency_squared) ** 0.5)
+    # Leave overflowing evaluations to the arbitrary-precision check.
+    return (estimate if isfinite(estimate) else float("nan")), bound
+
+
+def _rounding_bound(order: int, m: int, magnitude: Fraction) -> float:
+    """Model the rounding error of ``_estimated_residual``.
+
+    Word coefficients of degree d are at most magnitude**d / d!, where the
+    magnitude is the absolute coefficient sum. Each passes through 2m + 1
+    appends of at most d terms. Large cancelling coefficients can therefore
+    inflate the estimate of an accurate formula. ``precision._guarded_dps``
+    reserves guard digits under the same growth model.
+    """
+    try:
+        largest = max(float(magnitude) ** d / factorial(d) for d in range(2, order + 1))
+    except OverflowError:
+        return inf
+    return float(np.finfo(np.float64).eps) * (2 * m + 1) * order * largest
+
+
 def _start(
     conditions: SearchConditions, options: _SearchOptions, index: int
 ) -> NDArray[np.complex128] | None:
@@ -67,13 +138,7 @@ def _start(
     if options.initial is not None and index % 2 == 0:
         # Finite decimal strings can still be outside the complex128 range.
         try:
-            coefficients = np.array(
-                [
-                    complex(float(Fraction(real)), float(Fraction(imag)))
-                    for real, imag in options.initial.b
-                ],
-                dtype=np.complex128,
-            )
+            coefficients = _complex_coefficients(options.initial)
         except OverflowError:
             pass
         else:
@@ -97,7 +162,15 @@ def _formula(options: _SearchOptions, full: NDArray[np.complex128]) -> Formula:
     return Formula(options.order, options.m, pairs)
 
 
-def _verified_result(formula: Formula, options: _SearchOptions, attempts: int) -> SearchResult:
+def _verified_result(
+    formula: Formula, options: _SearchOptions, attempts: int, *, screen: bool = True
+) -> SearchResult:
+    if screen:
+        estimate, bound = _estimated_residual(formula)
+        if estimate - bound > _SKIP_MARGIN * max(options.tolerance, _SCREEN_TOLERANCE):
+            # Neither acceptance nor refinement is possible, so skip the costly check.
+            return SearchResult(formula, estimate, attempts, False, verified=False)
+
     dps = options.verification_dps
     tolerance = str(options.tolerance)
     check = verify(formula, dps=dps, tolerance=tolerance)
@@ -165,7 +238,8 @@ def search(
     centered order conditions in double precision. For tolerances below
     ``1e-12``, a promising candidate is refined at arbitrary precision.
     Verification uses all words through ``order``, with higher working
-    precision for tighter tolerances. The optional
+    precision for tighter tolerances. A candidate that a double-precision
+    check already rules out skips verification (see ``SearchResult``). The optional
     ``on_improvement`` callback runs in the calling process for each improved
     candidate, including an admissible initial formula. The optional
     ``on_progress`` callback runs in the calling process after each
@@ -218,7 +292,9 @@ def search(
     )
     best = None
     if initial is not None and above_real_floor(initial, floor):
-        best = _verified_result(initial, options, 0)
+        # The rounding bound is a model, not a guarantee, so a supplied
+        # formula always gets an arbitrary-precision verdict.
+        best = _verified_result(initial, options, 0, screen=False)
         if on_improvement is not None:
             on_improvement(best)
         if best.converged:
@@ -237,7 +313,7 @@ def search(
             if candidate.converged:
                 return candidate
             if reporter is not None:
-                reporter(done, best.residual)
+                reporter(done, best)
             if on_progress is not None:
                 on_progress(done, best)
         return None
@@ -258,4 +334,4 @@ def search(
                     return result
 
     assert best is not None
-    return SearchResult(best.formula, best.residual, attempts, best.converged)
+    return SearchResult(best.formula, best.residual, attempts, best.converged, best.verified)

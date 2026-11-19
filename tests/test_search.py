@@ -13,6 +13,8 @@ from quantum_splitting._kernel import OrderConditions
 from quantum_splitting._words import count_order_conditions, lyndon_words
 
 COEFFICIENTS = Path(__file__).resolve().parents[1] / "coefficients"
+# The package re-exports the search function under the same name.
+search_module = import_module("quantum_splitting.search")
 
 
 def test_order_condition_count_matches_the_solver_words():
@@ -23,7 +25,7 @@ def test_order_condition_count_matches_the_solver_words():
 def test_centered_conditions_match_example_root_and_directional_derivative():
     formula = load_formula(COEFFICIENTS / "order8_m52.json")
     kernel = CenteredConditions(formula.order, formula.m)
-    coefficients = np.array([complex(float(Fraction(a)), float(Fraction(b))) for a, b in formula.b])
+    coefficients = search_module._complex_coefficients(formula)
     offsets = formula.m * np.cumsum(coefficients[:-1]) - np.arange(formula.m) - 0.5
     residual, jacobian = kernel.evaluate(offsets, derivatives=True)
     assert len(residual) == count_order_conditions(8)
@@ -142,9 +144,7 @@ def test_search_rejects_an_undersized_m_before_attempting_a_solve(monkeypatch):
     def unexpected_attempt(*args):
         pytest.fail("The search tried to solve an undersized system")
 
-    monkeypatch.setattr(
-        import_module("quantum_splitting.search"), "_attempt", unexpected_attempt
-    )
+    monkeypatch.setattr(search_module, "_attempt", unexpected_attempt)
 
     with pytest.raises(ValueError) as error:
         search(6, 15, attempts=1, verbose=False)
@@ -153,3 +153,72 @@ def test_search_rejects_an_undersized_m_before_attempting_a_solve(monkeypatch):
     assert "7 free complex coefficients" in message
     assert "8 complex order conditions" in message
     assert "m >= 16" in message
+
+
+def _options(order, m, *, seed=0, max_nfev=1600):
+    return search_module._SearchOptions(order, m, seed, None, Fraction(0), max_nfev, 1e-12)
+
+
+def test_screen_passes_an_archived_root():
+    estimate, bound = search_module._estimated_residual(
+        load_formula(COEFFICIENTS / "order6_m16.json")
+    )
+    assert estimate < 1e-14 and bound < 1e-12
+
+
+def test_screen_estimates_the_verified_residual():
+    archived = load_formula(COEFFICIENTS / "order6_m16.json")
+    b = search_module._complex_coefficients(archived)
+    # Keep the palindrome and consistency while breaking the order conditions.
+    b[[1, -2]] += 1e-3
+    b[[2, -3]] -= 1e-3
+    options = _options(6, 16)
+    formula = search_module._formula(options, b)
+
+    estimate, _ = search_module._estimated_residual(formula)
+    verified = verify(formula, dps=40, tolerance="1e-12").max_residual
+    assert estimate > 1e-10
+    assert estimate == pytest.approx(float(verified), rel=1e-9)
+
+    skipped = search_module._verified_result(formula, options, 1)
+    assert not skipped.verified and skipped.residual == estimate
+    assert skipped.residual_label == "estimated maximum word error"
+
+
+def test_screen_defers_an_inconsistent_formula_to_verification():
+    archived = load_formula(COEFFICIENTS / "order6_m16.json")
+    real, imag = archived.b_half[0]
+    shifted = (str(Fraction(real) + Fraction(1, 10**6)), imag)
+    formula = Formula(archived.order, archived.m, (shifted, *archived.b_half[1:]))
+    assert np.isnan(search_module._estimated_residual(formula)[0])
+
+
+def test_screened_candidates_rank_by_their_maximum_word_error():
+    # Every start fails the screen. A Lyndon word estimate ranked the fourth
+    # start best, although its maximum word error exceeds that of the first.
+    result = search(6, 16, seed=22, attempts=4, max_nfev=4, verbose=False)
+    assert not result.verified
+    first = search_module._attempt(_options(6, 16, seed=22, max_nfev=4), 0)
+    assert result.formula == first.formula
+    verified = verify(result.formula, dps=40, tolerance="1e-12").max_residual
+    assert result.residual == pytest.approx(float(verified), rel=1e-9)
+
+
+def test_search_returns_a_supplied_initial_formula_with_large_coefficients():
+    # An exact order-2 formula whose large imaginary parts cancel.
+    initial = Formula(2, 2, (("1/4", "1000000"), ("1/2", "-2000000")))
+    assert verify(initial, dps=100, tolerance="1e-63").passed
+    result = search(2, 2, initial=initial, attempts=1, verbose=False)
+    assert result.formula == initial
+    assert result.converged and result.verified and result.attempts == 0
+
+
+def test_screen_verifies_when_rounding_could_explain_the_estimate(monkeypatch):
+    formula = load_formula(COEFFICIENTS / "order6_m16.json")
+    options = _options(6, 16)
+    # The estimate exceeds the skip threshold, but by less than the bound.
+    monkeypatch.setattr(search_module, "_estimated_residual", lambda _: (1e-10, 1e-9))
+    assert search_module._verified_result(formula, options, 1).verified
+
+    monkeypatch.setattr(search_module, "_estimated_residual", lambda _: (1e-10, 1e-14))
+    assert not search_module._verified_result(formula, options, 1).verified
