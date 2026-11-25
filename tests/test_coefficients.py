@@ -16,10 +16,10 @@ from quantum_splitting import Formula, load_formula, save_formula, verify
         (4, 4, "", 1),
         (6, 16, "", 1114),
         (6, 16, "_minl1", 27),
-        (8, 52, "", 24745),
-        (8, 52, "_minl1", 9870),
-        (10, 164, "", 24733),
-        (10, 164, "_minl1", 39),
+        (8, 52, "", 1255579),
+        (8, 52, "_minl1", 91291490),
+        (10, 164, "", 1342945),
+        (10, 164, "_minl1", 738222),
     ],
 )
 def test_archived_example_is_verified(order, m, suffix, seed):

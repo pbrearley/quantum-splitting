@@ -17,10 +17,10 @@ The search scripts write `order4_m4.json`, `order6_m16.json`, `order8_m52.json`,
 
 ## Console commands
 
-Run the order-8 search with seed `9870`, from `coefficients/order8_m52_minl1.json`, to reproduce the low-norm selection.
+Run the order-8 search with seed `91291490`, from `coefficients/order8_m52_minl1.json`, to reproduce the low-norm selection.
 
 ```bash
-quantum-splitting search --order 8 --m 52 --seed 9870 --min-real 1e-10 --tolerance 1e-63 \
+quantum-splitting search --order 8 --m 52 --seed 91291490 --min-real 1e-10 --tolerance 1e-63 \
   -o examples/order8_m52_minl1.json
 ```
 
