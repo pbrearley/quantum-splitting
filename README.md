@@ -1,4 +1,4 @@
-# Splitting Coefficients for Contractive Dynamics
+# Splitting Coefficients for Dissipative Dynamics
 
 [![CI](https://github.com/pbrearley/quantum-splitting/actions/workflows/tests.yml/badge.svg)](https://github.com/pbrearley/quantum-splitting/actions/workflows/tests.yml)
 [![Docs](https://img.shields.io/badge/docs-guide-blue)](docs/getting-started.md)

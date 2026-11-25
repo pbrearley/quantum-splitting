@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software or its coefficients, please cite the work below."
-title: Splitting Coefficients for Contractive Dynamics
+title: Splitting Coefficients for Dissipative Dynamics
 type: software
 license: MIT
 version: 0.1.0
