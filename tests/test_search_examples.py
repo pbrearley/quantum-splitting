@@ -19,8 +19,16 @@ def test_square_search_saves_one_formula_without_optimisation(monkeypatch, tmp_p
     script = tmp_path / "01_order4.py"
     copyfile(EXAMPLES / script.name, script)
 
-    def search(*, order, m, seed, attempts, min_real, tolerance):
-        assert (order, m, seed, attempts, min_real, tolerance) == (4, 4, 1, 100, 1e-10, 1e-63)
+    def search(*, order, m, seed, attempts, workers, min_real, tolerance):
+        assert (order, m, seed, attempts, workers, min_real, tolerance) == (
+            4,
+            4,
+            1,
+            100,
+            1,
+            1e-10,
+            1e-63,
+        )
         return ds.SearchResult(formula=seed_formula, residual=0.0, attempts=1, converged=True)
 
     def optimize(*args, **kwargs):

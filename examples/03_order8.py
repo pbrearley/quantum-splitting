@@ -8,6 +8,7 @@ ORDER = 8
 M = 52
 SEED = 1255579
 SEARCH_ATTEMPTS = 100
+WORKERS = 1
 MIN_REAL = 1e-10
 DIGITS = 64
 OUTPUT_DIR = Path(__file__).resolve().parent
@@ -19,6 +20,7 @@ def main() -> None:
         m=M,
         seed=SEED,
         attempts=SEARCH_ATTEMPTS,
+        workers=WORKERS,
         min_real=MIN_REAL,
         tolerance=10.0 ** (1 - DIGITS),
     )

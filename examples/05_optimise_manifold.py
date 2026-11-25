@@ -8,13 +8,19 @@ ORDER = 4
 M = 12  # Six free complex coefficients for two complex conditions.
 SEED = 20
 SEARCH_ATTEMPTS = 100
+WORKERS = 1
 DIGITS = 64
 OUTPUT_DIR = Path(__file__).resolve().parent
 
 
 def main() -> None:
     found = search(
-        order=ORDER, m=M, seed=SEED, attempts=SEARCH_ATTEMPTS, tolerance=10.0 ** (1 - DIGITS)
+        order=ORDER,
+        m=M,
+        seed=SEED,
+        attempts=SEARCH_ATTEMPTS,
+        workers=WORKERS,
+        tolerance=10.0 ** (1 - DIGITS),
     )
     if not found.converged:
         raise SystemExit(
