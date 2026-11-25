@@ -94,7 +94,7 @@ Run the scripts from the project root. The first four examples search for formul
 | 8 | [`03_order8.py`](../examples/03_order8.py) | 52 | 26 | `examples/order8_m52.json` |
 | 10 | [`04_order10.py`](../examples/04_order10.py) | 164 | 82 | `examples/order10_m164.json` |
 
-Each script uses a fixed seed and saves a formula verified at tolerance `1e-63`. The seed fixes the starting points. Small numerical differences can affect which root the search reaches. Use [the files in `coefficients/`](../coefficients/README.md) when you need the exact archived values. [Low-norm search example](../examples/README.md#console-commands)
+Each script uses a fixed seed and saves a formula verified at tolerance `1e-63`. For orders 4, 6 and 8, the default seeds and settings should reproduce the archived schemes from a single start. At order 10, the search can be particularly sensitive to numerical round-off. Small differences in the numerical setup may therefore lead to a different scheme, even with the same seed. Use [the files in `coefficients/`](../coefficients/README.md) when you need the exact archived values. See [reproducing and verifying the example schemes](../examples/README.md#reproducing-the-example-schemes).
 
 The [manifold optimisation example](../examples/05_optimise_manifold.py) uses order 4 with $m=12$. Run `python examples/05_optimise_manifold.py` to search for a starting formula and minimise all three objectives from it. With six free complex coefficients and two complex order conditions, a regular solution has four complex directions available for optimisation.
 

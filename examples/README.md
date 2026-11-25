@@ -7,13 +7,26 @@ Run these scripts from the project root after installing the package.
 | [01_order4.py](01_order4.py) | Search for the order-4 baseline with $m=4$. |
 | [02_order6.py](02_order6.py) | Search for the low-error order-6 formula with $m=16$. |
 | [03_order8.py](03_order8.py) | Search for the low-error order-8 formula with $m=52$. |
-| [04_order10.py](04_order10.py) | Search for the low-error order-10 formula with $m=164$. |
+| [04_order10.py](04_order10.py) | Search for a verified order-10 formula with $m=164$. |
 | [05_optimise_manifold.py](05_optimise_manifold.py) | Search at order 4 with $m=12$ and optimise along the free directions. |
 | [06_verify_coefficients.py](06_verify_coefficients.py) | Verify the seven files in [coefficients/](../coefficients/README.md). |
 | [07_refine_coefficients.py](07_refine_coefficients.py) | Refine the archived low-error order-6 formula to 100 significant figures and verify it. |
 | [08_plots.py](08_plots.py) | Compare the archived coefficient profiles and convergence side by side. |
 
 The search scripts write `order4_m4.json`, `order6_m16.json`, `order8_m52.json`, and `order10_m164.json`, respectively. Each file records the seed used by the script. [Search settings](../docs/getting-started.md#search-and-optimise-examples)
+
+## Reproducing the example schemes
+
+For orders 4, 6 and 8, the default seeds and settings should reproduce the corresponding archived schemes from a single start.
+
+At order 10, the search can be particularly sensitive to numerical round-off. Small differences in the numerical setup may therefore lead to a different scheme, even with the same seed.
+
+The archived coefficients can still be verified directly:
+
+```bash
+quantum-splitting verify coefficients/order10_m164.json \
+  --dps 90 --tolerance 1e-63 --leading
+```
 
 ## Console commands
 
