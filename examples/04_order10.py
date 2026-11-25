@@ -6,7 +6,7 @@ from quantum_splitting import save_formula, search
 
 ORDER = 10
 M = 164
-SEED = 24733
+SEED = 1342945
 SEARCH_ATTEMPTS = 100
 MIN_REAL = 1e-10
 DIGITS = 64
